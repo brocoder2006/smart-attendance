@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Attendance System</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      position: relative;
+    }
+
+    .season-img {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: -1;
+      opacity: 1;
+    }
+
+    .container {
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(5px);
+      padding: 2rem;
+      border-radius: 15px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+      width: 400px;
+    }
+
+    h1 {
+      color: white;
+      margin-bottom: 1rem;
+    }
+
+    h2 {
+      color: white;
+      margin-bottom: 0.7rem;
+    }
+
+    .period-options {
+      display: flex;
+      justify-content: space-around;
+      margin-bottom: 1.5rem;
+    }
+
+    .form-check {
+      font-size: 1.5rem;
+      color: white;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .custom-radio {
+      width: 24px;
+      height: 24px;
+      accent-color: #00bcd4;
+      cursor: pointer;
+    }
+
+    button {
+      background: #2193b0;
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      border-radius: 8px;
+      font-size: 1.1em;
+      cursor: pointer;
+      transition: background 0.3s ease;
+      width: 100%;
+    }
+
+    button:hover {
+      background: #1a7a8f;
+    }
+
+    .attendance-box {
+      margin-top: 1.5rem;
+      padding: 1rem;
+      background: #f8f9fa;
+      border-radius: 10px;
+      min-height: 50px;
+    }
+  </style>
+
+  <script>
+    function updateAttendance() {
+      fetch('/attendance_data')
+        .then(response => response.json())
+        .then(data => {
+          let names = data.names;
+          document.getElementById("attendance-list").innerText = names.length ? names.join(", ") : "No attendees yet.";
+        })
+        .catch(error => console.error("Error fetching attendance data:", error));
+    }
+
+    function startCamera() {
+  const selected = document.querySelector('input[name="period"]:checked');
+  if (!selected) {
+    alert("⚠️ Please select the number of periods first!");
+    return;
+  }
+
+  const period = selected.value;
+
+  fetch('/start_camera', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ period: period })
+  })
+  .then(response => response.json())
+  .then(data => {
+    alert(data.message);
+  })
+  .catch(error => console.error("Error starting camera:", error));
+}
+
+
+    setInterval(updateAttendance, 5000);
+  </script>
+</head>
+<body>
+  <img src="static/winter.png" class="season-img" alt="Winter background">
+
+  <div class="container">
+    <h1>Attendance System</h1>
+
+    <h2>Choose no. of periods:</h2>
+
+    <div class="period-options">
+      <div class="form-check">
+        <input class="form-check-input custom-radio" type="radio" name="period" id="radio1" value="1">
+        <label class="form-check-label" for="radio1">1</label>
+      </div>
+      <div class="form-check">
+        <input class="form-check-input custom-radio" type="radio" name="period" id="radio2" value="2">
+        <label class="form-check-label" for="radio2">2</label>
+      </div>
+    </div>
+
+    <button onclick="startCamera()">Start Camera</button>
+
+    <h2>Attendance:</h2>
+    <div class="attendance-box" id="attendance-list">Loading...</div>
+
+  </div>
+</body>
+</html>

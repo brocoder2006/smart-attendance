@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Welcome Page</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow-x: hidden;
+    }
+
+    .bg-winter {
+      background: url('/static/winter.png') no-repeat center center fixed;
+      background-size: cover;
+      min-height: 100vh;
+      padding: 2rem 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .login-container {
+      background-color: rgba(0, 0, 0, 0.7);
+      border-radius: 1rem;
+      padding: 2rem;
+      color: white;
+      width: 100%;
+      max-width: 500px;
+    }
+
+    h2 {
+      text-align: center;
+      margin-bottom: 1.5rem;
+      font-weight: bold;
+    }
+
+    .semester-selection h3 {
+      text-align: center;
+      margin-bottom: 1rem;
+      font-size: 1.25rem;
+    }
+
+    .semester-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 1.2rem;
+    }
+
+    .semester-card {
+      background: rgba(255, 255, 255, 0.2);
+      color: white;
+      border-radius: 10px;
+      padding: 1rem;
+      text-align: center;
+      transition: all 0.3s ease;
+      border: 2px solid transparent;
+      font-weight: bold;
+      font-size: 1rem;
+      text-decoration: none; /* Removes underline */
+      cursor: pointer;
+    }
+
+    .semester-card:hover {
+      background-color: rgba(255, 255, 255, 0.3);
+      border-color: #0d6efd;
+      transform: translateY(-3px);
+    }
+
+    .semester-card.selected {
+      background-color: rgba(255, 255, 255, 0.4);
+      border-color: #0d6efd;
+    }
+
+    .semester-card:focus {
+      outline: none;
+      box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.5);
+    }
+
+    .semester-card .semester-number {
+      font-size: 1.6rem;
+      display: block;
+    }
+
+    .action-buttons {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      margin-top: 2rem;
+      flex-wrap: wrap;
+    }
+
+    .btn-custom {
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: bold;
+    }
+
+  </style>
+</head>
+<body>
+
+  <section class="bg-winter">
+    <div class="login-container">
+      <h2 id="welcomeText">Welcome, {{ key }}.</h2>
+      <div class="semester-selection">
+        <h3>Select Semester</h3>
+        <div class="semester-grid" id="semesterGrid">
+          <button class="semester-card" data-semester="1"><span class="semester-number">01</span>First Semester</button>
+          <button class="semester-card" data-semester="2"><span class="semester-number">02</span>Second Semester</button>
+          <button class="semester-card" data-semester="3"><span class="semester-number">03</span>Third Semester</button>
+          <button class="semester-card" data-semester="4"><span class="semester-number">04</span>Fourth Semester</button>
+          <button class="semester-card" data-semester="5"><span class="semester-number">05</span>Fifth Semester</button>
+          <button class="semester-card" data-semester="6"><span class="semester-number">06</span>Sixth Semester</button>
+          <button class="semester-card" data-semester="7"><span class="semester-number">07</span>Seventh Semester</button>
+          <button class="semester-card" data-semester="8"><span class="semester-number">08</span>Eighth Semester</button>
+        </div>
+        <div class="action-buttons">
+          <button class="btn btn-primary btn-custom" onclick="window.location.href='/logout'">Logout</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    document.querySelectorAll('.semester-card').forEach(card => {
+      card.addEventListener('click', function () {
+        window.location.href = '/action'; // Directly redirects without alert
+      });
+    });
+
+    function goBack() {
+      window.location.href = "/";
+    }
+
+    const hour = new Date().getHours();
+    const greeting = hour < 12 ? 'Good Morning' :
+                     hour < 18 ? 'Good Afternoon' : 'Good Evening';
+    document.getElementById('welcomeText').textContent = `${greeting}, {{ key }} sir`;
+  </script>
+</body>
+</html>
