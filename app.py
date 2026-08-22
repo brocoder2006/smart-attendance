@@ -4,11 +4,20 @@ from wtforms import StringField, PasswordField, SubmitField
 from wtforms.validators import DataRequired
 import json
 
+import numpy as np
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your_super_secret_encryption_key'
 
-# Mock database of active attendees
-active_attendees = ["John Doe", "Jane Smith"]
+# Mock database of active attendees loaded dynamically from face_names.npy
+try:
+    raw_names = np.load('face_names.npy', allow_pickle=True)
+    # Extract unique names and filter out UNKNOWN values
+    active_attendees = sorted(list(set(str(name) for name in raw_names if str(name).upper() != "UNKNOWN")))
+except Exception as e:
+    print(f"Error loading face_names.npy: {e}")
+    active_attendees = ["Arpan", "Jatin"]
+
 
 # 1. WTForm definition for Teacher Login (index1.html)
 class TeacherLoginForm(FlaskForm):
