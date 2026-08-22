@@ -21,7 +21,7 @@ class TeacherLoginForm(FlaskForm):
 @app.route('/')
 def index():
     # Role Selection Page
-    return render_template('index1.html')
+    return render_template('home.html')
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -31,10 +31,11 @@ def login():
     if form.validate_on_submit():
         if form.username.data == "admin" and form.password.data == "password":
             session['user'] = form.username.data
-            return render_template('login.html', form=form, result="success")
+            return render_template('index1.html', form=form, result="success")
         else:
             result = "Invalid credentials. Please try again."
-    return render_template('login.html', form=form, result=result)
+    return render_template('index1.html', form=form, result=result)
+
 
 @app.route('/student_login', methods=['GET', 'POST'])
 def student_login():
@@ -44,6 +45,11 @@ def student_login():
         session['user'] = request.form.get('username')
         return redirect(url_for('welcome2'))
     return render_template('attendance.html')
+
+@app.route('/video_feed')
+def video_feed():
+    return render_template('attendance.html')
+
 
 @app.route('/welcome')
 def welcome():
