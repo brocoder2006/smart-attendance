@@ -18,6 +18,20 @@ except Exception as e:
     print(f"Error loading face_names.npy: {e}")
     active_attendees = ["Arpan", "Jatin"]
 
+# Conditional imports of ML/CV libraries for proper face recognition
+REAL_FACE_RECOGNITION_AVAILABLE = False
+live_detector = None
+try:
+    import cv2
+    import torch
+    import pandas as pd
+    from live import Live
+    REAL_FACE_RECOGNITION_AVAILABLE = True
+    print("Proper face recognition dependencies are loaded successfully!")
+except ImportError as e:
+    print(f"Proper face recognition dependencies not available, running in Mock mode. (Error: {e})")
+
+
 
 # 1. WTForm definition for Teacher Login (index1.html)
 class TeacherLoginForm(FlaskForm):
@@ -92,15 +106,77 @@ def display_records():
 
 @app.route('/start_camera', methods=['POST'])
 def start_camera():
-    data = request.get_json()
-    period = data.get('period')
-    # Logic to trigger physical hardware webcam script goes here
-    return jsonify({"message": f"📷 Camera initiated successfully for Period {period}!"})
+    global live_detector
+    data = request.get_json() or {}
+    period = data.get('period', 1)
+    teacher_name = session.get('user', 'Teacher')
+    
+    if REAL_FACE_RECOGNITION_AVAILABLE:
+        import threading
+        live_detector = Live()
+        
+        def run_camera_thread():
+            try:
+                # Automate Excel workbook/sheet verification and creation
+                excel_file = 'static/attendance_sheet.xlsx'
+                import pandas as pd
+                import os
+                
+                sheets = []
+                if os.path.exists(excel_file):
+                    try:
+                        with pd.ExcelFile(excel_file) as xls:
+                            sheets = xls.sheet_names
+                    except Exception:
+                        pass
+                
+                if teacher_name not in sheets:
+                    df_new = pd.DataFrame(columns=["Roll No", "Name"])
+                    try:
+                        raw_names = np.load('face_names.npy', allow_pickle=True)
+                        unique_names = sorted(list(set(str(name) for name in raw_names if str(name).upper() != "UNKNOWN")))
+                        for idx, name in enumerate(unique_names):
+                            df_new.loc[idx] = [101 + idx, name]
+                    except Exception:
+                        df_new.loc[0] = [101, "Arpan"]
+                        df_new.loc[1] = [102, "Jatin"]
+                    
+                    if os.path.exists(excel_file):
+                        with pd.ExcelWriter(excel_file, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+                            df_new.to_excel(writer, sheet_name=teacher_name, index=False)
+                    else:
+                        with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
+                            df_new.to_excel(writer, sheet_name=teacher_name, index=False)
+                
+                # Start the physical face recognition engine loop
+                live_detector.run(sheet_name=teacher_name, period=period)
+            except Exception as e:
+                print(f"Error running physical camera: {e}")
+                
+        threading.Thread(target=run_camera_thread, daemon=True).start()
+        return jsonify({"message": f"📷 Live face recognition camera started for Period {period}!"})
+    else:
+        # Graceful cloud mock mode fallback
+        import threading
+        import time
+        def mock_simulation():
+            global active_attendees
+            active_attendees = []
+            time.sleep(3)
+            active_attendees.append("Arpan")
+            time.sleep(3)
+            active_attendees.append("Jatin")
+            
+        threading.Thread(target=mock_simulation, daemon=True).start()
+        return jsonify({"message": f"📷 Mock Camera initiated for Period {period} (running in fallback mode)!"})
 
 @app.route('/attendance_data')
 def attendance_data():
     # Dynamically polled by the camera page every 5 seconds
+    if REAL_FACE_RECOGNITION_AVAILABLE and live_detector is not None:
+        return jsonify({"names": live_detector.detected_names})
     return jsonify({"names": active_attendees})
+
 
 @app.route('/logout')
 def logout():
