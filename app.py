@@ -35,7 +35,12 @@ try:
     REAL_FACE_RECOGNITION_AVAILABLE = True
     print("Proper face recognition dependencies are loaded successfully!")
     
+    # Bypass macOS SSL certificate verification for model downloads
+    import ssl
+    ssl._create_default_https_context = ssl._create_unverified_context
+    
     # Pre-load face recognition models globally for fast real-time inference
+
     from facenet_pytorch import MTCNN, InceptionResnetV1
     mtcnn_model = MTCNN(keep_all=True, thresholds=[0.6, 0.7, 0.7], device='cpu')
     resnet_model = InceptionResnetV1(pretrained='vggface2').eval()
