@@ -34,12 +34,13 @@
     }
 
     .container {
-      background: rgba(0, 0, 0, 0.7);
-      backdrop-filter: blur(5px);
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(8px);
       padding: 2rem;
       border-radius: 15px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-      width: 400px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+      width: 680px;
+      max-width: 95%;
     }
 
     h1 {
@@ -50,25 +51,27 @@
     h2 {
       color: white;
       margin-bottom: 0.7rem;
+      font-size: 1.3rem;
     }
 
     .period-options {
       display: flex;
-      justify-content: space-around;
+      justify-content: center;
+      gap: 2rem;
       margin-bottom: 1.5rem;
     }
 
     .form-check {
-      font-size: 1.5rem;
+      font-size: 1.3rem;
       color: white;
       display: flex;
       align-items: center;
-      gap: 0.4rem;
+      gap: 0.5rem;
     }
 
     .custom-radio {
-      width: 24px;
-      height: 24px;
+      width: 20px;
+      height: 20px;
       accent-color: #00bcd4;
       cursor: pointer;
     }
@@ -82,58 +85,171 @@
       font-size: 1.1em;
       cursor: pointer;
       transition: background 0.3s ease;
-      width: 100%;
+      width: 250px;
+      margin-bottom: 1.5rem;
     }
 
     button:hover {
       background: #1a7a8f;
     }
 
+    /* Video Feed Container */
+    .video-container {
+      position: relative;
+      width: 480px;
+      height: 360px;
+      margin: 0 auto 1.5rem auto;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 3px solid #2193b0;
+      background: #000;
+      box-shadow: 0 0 15px rgba(33, 147, 176, 0.5);
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transform: scaleX(-1); /* Mirror view */
+    }
+
+    .scanner-line {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 4px;
+      background: linear-gradient(to right, transparent, #00bcd4, transparent);
+      box-shadow: 0 0 8px #00bcd4;
+      animation: scan 2.5s linear infinite;
+      display: none;
+      pointer-events: none;
+    }
+
+    @keyframes scan {
+      0% { top: 0%; }
+      50% { top: 100%; }
+      100% { top: 0%; }
+    }
+
     .attendance-box {
-      margin-top: 1.5rem;
+      margin-top: 1rem;
       padding: 1rem;
-      background: #f8f9fa;
+      background: rgba(255, 255, 255, 0.15);
       border-radius: 10px;
-      min-height: 50px;
+      min-height: 60px;
+      color: white;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .student-badge {
+      background: #204c43;
+      color: #fff;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-weight: bold;
+      border: 1px solid #ffd54f;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
     }
   </style>
 
   <script>
-    function updateAttendance() {
+    let stream = null;
+    let intervalId = null;
+
+    async function startCamera() {
+      const selected = document.querySelector('input[name="period"]:checked');
+      if (!selected) {
+        alert("⚠️ Please select the number of periods first!");
+        return;
+      }
+
+      const period = selected.value;
+
+      try {
+        // Request browser webcam permission and start stream
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 480, height: 360 }
+        });
+        
+        const video = document.getElementById("webcam");
+        video.srcObject = stream;
+        video.style.display = "block";
+        document.getElementById("scanner").style.display = "block";
+
+        // Call backend start_camera to initialize list
+        await fetch('/start_camera', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ period: period })
+        });
+
+        // Start sending frames to backend for recognition
+        if (intervalId) clearInterval(intervalId);
+        intervalId = setInterval(() => sendFrame(period), 1000);
+
+        // Periodically poll final attendance data (every 3 seconds)
+        setInterval(updateAttendanceList, 3000);
+
+      } catch (error) {
+        alert("❌ Camera access denied or error: " + error.message);
+      }
+    }
+
+    function sendFrame(period) {
+      const video = document.getElementById("webcam");
+      const canvas = document.getElementById("canvas");
+      const context = canvas.getContext("2d");
+
+      if (video.srcObject) {
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        // Extract base64 JPEG image
+        const dataURL = canvas.toDataURL("image/jpeg", 0.7);
+        const base64Image = dataURL.split(",")[1];
+
+        fetch('/process_frame', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ image: base64Image, period: period })
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.names && data.names.length > 0) {
+            updateAttendanceList();
+          }
+        })
+        .catch(error => console.error("Error processing frame:", error));
+      }
+    }
+
+    function updateAttendanceList() {
       fetch('/attendance_data')
         .then(response => response.json())
         .then(data => {
-          let names = data.names;
-          document.getElementById("attendance-list").innerText = names.length ? names.join(", ") : "No attendees yet.";
+          const listDiv = document.getElementById("attendance-list");
+          listDiv.innerHTML = "";
+          
+          if (data.names && data.names.length > 0) {
+            data.names.forEach(name => {
+              const badge = document.createElement("span");
+              badge.className = "student-badge";
+              badge.innerText = "🎓 " + name;
+              listDiv.appendChild(badge);
+            });
+          } else {
+            listDiv.innerText = "No attendees detected yet.";
+          }
         })
         .catch(error => console.error("Error fetching attendance data:", error));
     }
-
-    function startCamera() {
-  const selected = document.querySelector('input[name="period"]:checked');
-  if (!selected) {
-    alert("⚠️ Please select the number of periods first!");
-    return;
-  }
-
-  const period = selected.value;
-
-  fetch('/start_camera', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ period: period })
-  })
-  .then(response => response.json())
-  .then(data => {
-    alert(data.message);
-  })
-  .catch(error => console.error("Error starting camera:", error));
-}
-
-
-    setInterval(updateAttendance, 5000);
   </script>
 </head>
 <body>
@@ -141,6 +257,13 @@
 
   <div class="container">
     <h1>Attendance System</h1>
+
+    <div class="video-container">
+      <video id="webcam" autoplay playsinline style="display: none;"></video>
+      <div class="scanner-line" id="scanner"></div>
+    </div>
+    
+    <canvas id="canvas" width="480" height="360" style="display: none;"></canvas>
 
     <h2>Choose no. of periods:</h2>
 
@@ -157,8 +280,8 @@
 
     <button onclick="startCamera()">Start Camera</button>
 
-    <h2>Attendance:</h2>
-    <div class="attendance-box" id="attendance-list">Loading...</div>
+    <h2>Attendance Logged:</h2>
+    <div class="attendance-box" id="attendance-list">No attendees detected yet.</div>
 
   </div>
 </body>

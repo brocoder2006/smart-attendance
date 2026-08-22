@@ -21,6 +21,12 @@ except Exception as e:
 # Conditional imports of ML/CV libraries for proper face recognition
 REAL_FACE_RECOGNITION_AVAILABLE = False
 live_detector = None
+mtcnn_model = None
+resnet_model = None
+face_features = None
+face_names = None
+detected_students = set()
+
 try:
     import cv2
     import torch
@@ -28,8 +34,17 @@ try:
     from live import Live
     REAL_FACE_RECOGNITION_AVAILABLE = True
     print("Proper face recognition dependencies are loaded successfully!")
-except ImportError as e:
-    print(f"Proper face recognition dependencies not available, running in Mock mode. (Error: {e})")
+    
+    # Pre-load face recognition models globally for fast real-time inference
+    from facenet_pytorch import MTCNN, InceptionResnetV1
+    mtcnn_model = MTCNN(keep_all=True, thresholds=[0.6, 0.7, 0.7], device='cpu')
+    resnet_model = InceptionResnetV1(pretrained='vggface2').eval()
+    face_features = np.load('face_features.npy').reshape(-1, 512)
+    face_names = np.load('face_names.npy')
+    print("Face recognition models initialized successfully!")
+except Exception as e:
+    print(f"Proper face recognition dependencies or models not available, running in Mock mode. (Error: {e})")
+
 
 
 
@@ -106,76 +121,144 @@ def display_records():
 
 @app.route('/start_camera', methods=['POST'])
 def start_camera():
-    global live_detector
+    global detected_students
     data = request.get_json() or {}
+    period = data.get('period', 1)
+    
+    # Reset detected students for the new camera session
+    detected_students = set()
+    return jsonify({"message": f"Camera session initiated for Period {period}."})
+
+@app.route('/process_frame', methods=['POST'])
+def process_frame():
+    global detected_students
+    data = request.get_json() or {}
+    image_base64 = data.get('image')
     period = data.get('period', 1)
     teacher_name = session.get('user', 'Teacher')
     
-    if REAL_FACE_RECOGNITION_AVAILABLE:
-        import threading
-        live_detector = Live()
+    if not image_base64:
+        return jsonify({"names": list(detected_students)})
         
-        def run_camera_thread():
-            try:
-                # Automate Excel workbook/sheet verification and creation
-                excel_file = 'static/attendance_sheet.xlsx'
-                import pandas as pd
-                import os
-                
-                sheets = []
-                if os.path.exists(excel_file):
-                    try:
-                        with pd.ExcelFile(excel_file) as xls:
-                            sheets = xls.sheet_names
-                    except Exception:
-                        pass
-                
-                if teacher_name not in sheets:
-                    df_new = pd.DataFrame(columns=["Roll No", "Name"])
-                    try:
-                        raw_names = np.load('face_names.npy', allow_pickle=True)
-                        unique_names = sorted(list(set(str(name) for name in raw_names if str(name).upper() != "UNKNOWN")))
-                        for idx, name in enumerate(unique_names):
-                            df_new.loc[idx] = [101 + idx, name]
-                    except Exception:
-                        df_new.loc[0] = [101, "Arpan"]
-                        df_new.loc[1] = [102, "Jatin"]
-                    
-                    if os.path.exists(excel_file):
-                        with pd.ExcelWriter(excel_file, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
-                            df_new.to_excel(writer, sheet_name=teacher_name, index=False)
-                    else:
-                        with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
-                            df_new.to_excel(writer, sheet_name=teacher_name, index=False)
-                
-                # Start the physical face recognition engine loop
-                live_detector.run(sheet_name=teacher_name, period=period)
-            except Exception as e:
-                print(f"Error running physical camera: {e}")
-                
-        threading.Thread(target=run_camera_thread, daemon=True).start()
-        return jsonify({"message": f"📷 Live face recognition camera started for Period {period}!"})
-    else:
-        # Graceful cloud mock mode fallback
-        import threading
-        import time
-        def mock_simulation():
-            global active_attendees
-            active_attendees = []
-            time.sleep(3)
-            active_attendees.append("Arpan")
-            time.sleep(3)
-            active_attendees.append("Jatin")
+    if REAL_FACE_RECOGNITION_AVAILABLE and mtcnn_model is not None:
+        try:
+            import base64
+            import io
+            from PIL import Image
             
-        threading.Thread(target=mock_simulation, daemon=True).start()
-        return jsonify({"message": f"📷 Mock Camera initiated for Period {period} (running in fallback mode)!"})
+            # Decode base64 image from browser webcam
+            image_data = base64.b64decode(image_base64)
+            image = Image.open(io.BytesIO(image_data))
+            
+            # Convert to RGB numpy format
+            frame_rgb = np.array(image.convert("RGB"))
+            
+            # Detect faces
+            boxes, _ = mtcnn_model.detect(frame_rgb)
+            detected_now = []
+            
+            if boxes is not None:
+                for box in boxes:
+                    x1, y1, x2, y2 = map(int, box)
+                    # Extract face region of interest
+                    face_roi = frame_rgb[max(0, y1):min(frame_rgb.shape[0], y2), max(0, x1):min(frame_rgb.shape[1], x2)]
+                    if face_roi.size == 0:
+                        continue
+                        
+                    # Get face tensor and embedding
+                    face_tensor = mtcnn_model(face_roi)
+                    if face_tensor is not None:
+                        if face_tensor.dim() == 5:
+                            face_tensor = face_tensor.squeeze(0)
+                        if face_tensor.dim() == 3:
+                            face_tensor = face_tensor.unsqueeze(0)
+                            
+                        embedding = resnet_model(face_tensor).detach().numpy().flatten()
+                        # Compare with database
+                        distances = np.linalg.norm(face_features - embedding, axis=1)
+                        min_index = np.argmin(distances)
+                        min_distance = distances[min_index]
+                        
+                        if min_distance < 0.8:
+                            name = str(face_names[min_index])
+                            if name.upper() != "UNKNOWN":
+                                detected_now.append(name)
+                                detected_students.add(name)
+                                
+            # Mark newly detected students as present in the Excel sheet
+            for name in detected_now:
+                mark_present_in_excel(name, period, teacher_name)
+                
+            return jsonify({"names": list(detected_now)})
+        except Exception as e:
+            print(f"Error processing frame: {e}")
+            return jsonify({"names": list(detected_students)})
+    else:
+        # Mock mode fallback (simulates detecting Arpan and Jatin after a few frames)
+        import time
+        mock_names = ["Arpan", "Jatin"]
+        if len(detected_students) == 0:
+            detected_students.add(mock_names[0])
+            # Mark in Excel
+            mark_present_in_excel(mock_names[0], period, teacher_name)
+        elif len(detected_students) == 1:
+            detected_students.add(mock_names[1])
+            # Mark in Excel
+            mark_present_in_excel(mock_names[1], period, teacher_name)
+        return jsonify({"names": list(detected_students)})
+
+def mark_present_in_excel(name, period, teacher_name):
+    try:
+        excel_file = 'static/attendance_sheet.xlsx'
+        import pandas as pd
+        from datetime import date
+        import os
+        
+        sheets = []
+        if os.path.exists(excel_file):
+            try:
+                with pd.ExcelFile(excel_file) as xls:
+                    sheets = xls.sheet_names
+            except Exception:
+                pass
+                
+        # Generate sheets or open existing sheet
+        if teacher_name not in sheets:
+            df = pd.DataFrame(columns=["Roll No", "Name"])
+            try:
+                raw_names = np.load('face_names.npy', allow_pickle=True)
+                unique_names = sorted(list(set(str(n) for n in raw_names if str(n).upper() != "UNKNOWN")))
+                for idx, student_name in enumerate(unique_names):
+                    df.loc[idx] = [101 + idx, student_name]
+            except Exception:
+                df.loc[0] = [101, "Arpan"]
+                df.loc[1] = [102, "Jatin"]
+        else:
+            df = pd.read_excel(excel_file, sheet_name=teacher_name)
+            
+        # Add column for today if not present
+        today = date.today().strftime("%d-%m-%Y")
+        if today not in df.columns:
+            df[today] = 0
+            
+        # Set period for name
+        if name in df['Name'].values:
+            df.loc[df['Name'] == name, today] = int(period)
+            
+        # Write back
+        if os.path.exists(excel_file):
+            with pd.ExcelWriter(excel_file, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+                df.to_excel(writer, sheet_name=teacher_name, index=False)
+        else:
+            with pd.ExcelWriter(excel_file, engine='openpyxl') as writer:
+                df.to_excel(writer, sheet_name=teacher_name, index=False)
+    except Exception as e:
+        print(f"Error marking present in Excel: {e}")
 
 @app.route('/attendance_data')
 def attendance_data():
-    # Dynamically polled by the camera page every 5 seconds
-    if REAL_FACE_RECOGNITION_AVAILABLE and live_detector is not None:
-        return jsonify({"names": live_detector.detected_names})
-    return jsonify({"names": active_attendees})
+    return jsonify({"names": list(detected_students)})
+
 
 
 @app.route('/logout')
