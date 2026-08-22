@@ -46,6 +46,11 @@ def student_login():
         return redirect(url_for('welcome2'))
     return render_template('attendance.html')
 
+@app.route('/video_feed')
+def video_feed():
+    return render_template('attendance.html')
+
+
 @app.route('/welcome')
 def welcome():
     user = session.get('user', 'Teacher')
@@ -94,4 +99,6 @@ def logout():
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    import os
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=True)
